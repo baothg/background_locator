@@ -76,10 +76,16 @@ finished. Errors reply `send(1)`; a 30 s deadline reports
   `RESTORE_GAVE_UP`, clears tracking state and stops. Permanent errors
   (SecurityException, IllegalArgumentException, IllegalStateException such as a
   missing dispatcher) never retry. Success or unregister cancels the retry.
+  `ForegroundServiceStartNotAllowedException` on restore is neither: tracking
+  intent is kept and the service stops quietly for the next launch/boot.
+- Shutdown and notification-update commands dispatch via `startService` — only
+  `ACTION_START` is ever launched as a foreground service, so commands that
+  never enter foreground cannot trip the FGS deadline.
 - `onCreate` never calls `startForeground` — a service launched only to shut
-  down or restore without permission must not enter foreground (Android 14+
-  throws `ForegroundServiceDidNotStartInTimeException`). Running paths enter
-  foreground via `applySettings`/`start`.
+  down or restore without permission must not enter foreground. `ACTION_START`
+  enters foreground immediately after the permission check, before any branch
+  that can throw — otherwise a mid-command failure leaves the
+  `startForegroundService` deadline unmet (`ForegroundServiceDidNotStartInTimeException`).
 - `wasKilled: true` is injected into `initCallback` data when the previous
   session ended without a graceful unregister (`SESSION_ACTIVE` left true).
 - `BootBroadcastReceiver` re-runs registration only when tracking was enabled,

@@ -206,13 +206,12 @@ class BackgroundLocatorPlugin
         private fun stopIsolateService(context: Context, intent: Intent) {
             Log.d("BackgroundLocatorPlugin", "stopIsolateService => Shutting down locator plugin")
             try {
-                ContextCompat.startForegroundService(context, intent)
-            } catch (e: RuntimeException) {
-                // FGS-start is restricted on Android 12+ when the app is in the
-                // background and no service is up yet; a shutdown does not need
-                // foreground, so a plain startService is a safe fallback
-                ErrorReporter.report(context, "unregister", "SHUTDOWN_FGS_DENIED", e)
+                // Plain startService: shutdown never needs foreground, and a
+                // service launched only to stop must not enter foreground
                 context.startService(intent)
+            } catch (e: Exception) {
+                ErrorReporter.report(context, "unregister", "SHUTDOWN_DISPATCH_FAILED", e)
+                throw e
             }
         }
 
@@ -270,7 +269,11 @@ class BackgroundLocatorPlugin
                         args[Keys.SETTINGS_ANDROID_NOTIFICATION_BIG_MSG] as String)
             }
 
-            ContextCompat.startForegroundService(context, intent)
+            try {
+                context.startService(intent)
+            } catch (e: Exception) {
+                ErrorReporter.report(context, "update_notification", "COMMAND_FAILED", e)
+            }
         }
 
         @JvmStatic

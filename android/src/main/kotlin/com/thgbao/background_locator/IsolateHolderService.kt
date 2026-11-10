@@ -313,11 +313,16 @@ class IsolateHolderService : MethodChannel.MethodCallHandler, LocationUpdateList
                     }
                 }
                 ACTION_START -> {
-                    if (pendingShutdownResults.isNotEmpty()) {
-                        throw IllegalStateException("Service is shutting down; await unregister before registering")
-                    }
                     if (!hasLocationPermission()) {
                         throw SecurityException("Location permission was revoked")
+                    }
+                    // Enter foreground before anything else that can throw: the
+                    // command arrived via startForegroundService, so a failure
+                    // before this point leaves an uncatchable
+                    // ForegroundServiceDidNotStartInTimeException
+                    startForeground(notificationId, getNotification())
+                    if (pendingShutdownResults.isNotEmpty()) {
+                        throw IllegalStateException("Service is shutting down; await unregister before registering")
                     }
                     if (!isServiceInitialized && intent == null) startLocatorService(this)
                     if (!isServiceInitialized) {
@@ -353,6 +358,18 @@ class IsolateHolderService : MethodChannel.MethodCallHandler, LocationUpdateList
             ErrorReporter.report(this, "service_command", "COMMAND_FAILED", e)
             receiver?.let { pendingShutdownResults = pendingShutdownResults - it }
             receiver?.send(1, android.os.Bundle().apply { putString("message", e.message) })
+            val fgsBlocked = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                e is ForegroundServiceStartNotAllowedException
+            if (intent == null && fgsBlocked) {
+                // Foreground start blocked while the app is backgrounded: not a
+                // tracking failure — keep the intent, stop quietly and let the
+                // next launch/boot restore instead of spending retry budget
+                isServiceRunning = false
+                stopLocationResources()
+                stopForeground(true)
+                stopSelf(startId)
+                return START_NOT_STICKY
+            }
             if (intent == null && e !is SecurityException && e !is IllegalArgumentException &&
                 e !is IllegalStateException
             ) {
