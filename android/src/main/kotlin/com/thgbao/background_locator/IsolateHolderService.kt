@@ -217,11 +217,11 @@ class IsolateHolderService : MethodChannel.MethodCallHandler, LocationUpdateList
     override fun onCreate() {
         super.onCreate()
         isServiceCreated = true
-        try {
-            startForeground(notificationId, getNotification())
-        } catch (e: Exception) {
-            ErrorReporter.report(this, "service_create", "START_FOREGROUND_FAILED", e)
-        }
+        // Do NOT startForeground here: a service launched only to handle
+        // ACTION_SHUTDOWN/restore-without-permission must not enter foreground
+        // (Android 14 throws ForegroundServiceDidNotStartInTimeException when
+        // the location FGS permission is missing). Every running path calls
+        // startForeground via applySettings()/start().
         try {
             startLocatorService(this)
         } catch (e: Exception) {
@@ -353,7 +353,9 @@ class IsolateHolderService : MethodChannel.MethodCallHandler, LocationUpdateList
             ErrorReporter.report(this, "service_command", "COMMAND_FAILED", e)
             receiver?.let { pendingShutdownResults = pendingShutdownResults - it }
             receiver?.send(1, android.os.Bundle().apply { putString("message", e.message) })
-            if (intent == null && e !is SecurityException && e !is IllegalArgumentException) {
+            if (intent == null && e !is SecurityException && e !is IllegalArgumentException &&
+                e !is IllegalStateException
+            ) {
                 scheduleRestoreRetry(startId)
                 return START_STICKY
             }
@@ -373,6 +375,17 @@ class IsolateHolderService : MethodChannel.MethodCallHandler, LocationUpdateList
         isServiceRunning = false
         stopLocationResources()
         restoreRetry?.let { restoreHandler.removeCallbacks(it) }
+        if (!restoreBackoff.hasNext()) {
+            // Retry budget exhausted: treat as permanent instead of looping
+            // forever with the notification up and no locations flowing
+            ErrorReporter.report(this, "service_restore", "RESTORE_GAVE_UP",
+                "Restore retries exhausted; tracking disabled until re-registered")
+            PreferencesManager.setTrackingEnabled(this, false)
+            PreferencesManager.setSessionActive(this, false)
+            stopForeground(true)
+            stopSelf(startId)
+            return
+        }
         val retry = Runnable {
             restoreRetry = null
             onStartCommand(null, 0, startId)

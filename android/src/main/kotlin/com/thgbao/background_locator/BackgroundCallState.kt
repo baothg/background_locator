@@ -24,10 +24,14 @@ internal class BackgroundCallState {
     }
 }
 
-internal class RestoreRetryBackoff {
+internal class RestoreRetryBackoff(private val maxAttempts: Int = 10) {
     private var delay = 1000L
+    private var attempts = 0
+
+    fun hasNext(): Boolean = attempts < maxAttempts
 
     fun nextDelay(): Long {
+        attempts++
         val current = delay
         delay = (delay * 2).coerceAtMost(60000L)
         return current
@@ -35,5 +39,6 @@ internal class RestoreRetryBackoff {
 
     fun reset() {
         delay = 1000L
+        attempts = 0
     }
 }

@@ -69,4 +69,16 @@ class BackgroundCallStateTest {
         backoff.reset()
         assertEquals(1000L, backoff.nextDelay())
     }
+
+    @Test
+    fun restoreRetriesStopAfterMaxAttempts() {
+        val backoff = RestoreRetryBackoff()
+        repeat(10) {
+            assertTrue(backoff.hasNext())
+            backoff.nextDelay()
+        }
+        assertFalse(backoff.hasNext())
+        backoff.reset()
+        assertTrue(backoff.hasNext())
+    }
 }

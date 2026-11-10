@@ -72,8 +72,14 @@ finished. Errors reply `send(1)`; a 30 s deadline reports
   `hasLocationPermission`, `hasBackgroundLocationPermission`).
 - Transient restore/start failures report `RESTORE_FAILED`/`COMMAND_FAILED`,
   **keep** `trackingEnabled`, and retry with exponential backoff
-  1–2–4–8–16–32–60 s (capped). SecurityException/IllegalArgumentException do not
-  retry. Success or unregister cancels the retry.
+  1–2–4–8–16–32–60 s, at most 10 attempts — the budget exhausted path reports
+  `RESTORE_GAVE_UP`, clears tracking state and stops. Permanent errors
+  (SecurityException, IllegalArgumentException, IllegalStateException such as a
+  missing dispatcher) never retry. Success or unregister cancels the retry.
+- `onCreate` never calls `startForeground` — a service launched only to shut
+  down or restore without permission must not enter foreground (Android 14+
+  throws `ForegroundServiceDidNotStartInTimeException`). Running paths enter
+  foreground via `applySettings`/`start`.
 - `wasKilled: true` is injected into `initCallback` data when the previous
   session ended without a graceful unregister (`SESSION_ACTIVE` left true).
 - `BootBroadcastReceiver` re-runs registration only when tracking was enabled,

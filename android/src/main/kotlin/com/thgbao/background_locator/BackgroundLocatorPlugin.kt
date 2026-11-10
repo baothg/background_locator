@@ -26,6 +26,7 @@ class BackgroundLocatorPlugin
 
     companion object {
         private var pendingStops = 0
+        private var pendingStarts = 0
 
         private fun commandReceiver(context: Context, result: Result, onCompleted: () -> Unit): ResultReceiver {
             val handler = Handler(context.mainLooper)
@@ -53,9 +54,9 @@ class BackgroundLocatorPlugin
 
         private fun sendCommand(context: Context, intent: Intent, result: Result) {
             val stopping = intent.action == IsolateHolderService.ACTION_SHUTDOWN
-            if (stopping) pendingStops++
+            if (stopping) pendingStops++ else pendingStarts++
             val receiver = commandReceiver(context, result) {
-                if (stopping) pendingStops--
+                if (stopping) pendingStops-- else pendingStarts--
             }
             intent.putExtra(IsolateHolderService.COMMAND_RESULT, receiver)
             try {
@@ -226,8 +227,12 @@ class BackgroundLocatorPlugin
         private fun unRegisterPlugin(context: Context, result: Result?) {
             val wasTracking = PreferencesManager.isTrackingEnabled(context)
             PreferencesManager.setTrackingEnabled(context, false)
-            if (!IsolateHolderService.isServiceCreated && !IsolateHolderService.isServiceRunning && !wasTracking && pendingStops == 0) {
-                // The service is not running and no start is pending
+            PreferencesManager.setSessionActive(context, false)
+            if (!IsolateHolderService.isServiceCreated && !IsolateHolderService.isServiceRunning &&
+                pendingStops == 0 && pendingStarts == 0
+            ) {
+                // No service and no queued start to stop: reply success without
+                // launching a foreground service just to shut it down
                 Log.d("BackgroundLocatorPlugin", "Locator service is not running, nothing to stop")
                 result?.success(true)
                 return
